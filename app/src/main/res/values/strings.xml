@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">CameraApp</string>
+    <string name="text_hello">Hello Jinki</string>
+    <string name="button_b1">Open Camera</string>
+</resources>
