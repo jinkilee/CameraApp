@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Size
@@ -19,17 +20,35 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import com.mv.engine.FaceDetector
+import com.mv.engine.Live
 
 typealias LumaListener = (luma: Double) -> Unit
 
 class MainActivity : AppCompatActivity() {
+
+    init {
+        instance = this
+    }
+
     private var imageCapture: ImageCapture? = null
     private lateinit var outputDirectory: File
     private lateinit var cameraExecutor: ExecutorService
 
+    private var faceDetector: FaceDetector = FaceDetector()
+    private var live: Live = Live()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        var assetManager = MainActivity.ApplicationContext().resources.assets
+
+        var retFaceDetector = faceDetector.loadModel(assetManager)
+        Log.d("AAA", "faceDetector load: $retFaceDetector")
+
+        var retLive= live.loadModel(assetManager)
+        Log.d("AAA", "live load: $retLive")
 
         if(allPermissionGranted()) {
             Log.d("AAA", "permission granted")
@@ -187,6 +206,10 @@ class MainActivity : AppCompatActivity() {
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
         private const val REQUEST_CODE_PERMISSIONS = 10
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        lateinit var instance: MainActivity
+        fun ApplicationContext(): Context {
+            return instance.applicationContext
+        }
     }
 
     private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
