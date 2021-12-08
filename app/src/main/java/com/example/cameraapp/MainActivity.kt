@@ -3,17 +3,29 @@ package com.example.cameraapp
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.widget.Button
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val button: Button = findViewById(R.id.button_camera)
-        button.setOnClickListener {
-            Log.d("AAA", "OpenCamera button clicked")
-        }
         setContentView(R.layout.activity_main)
+
+        if(allPermissionGranted()) {
+            Log.d("AAA", "permission granted")
+        }
+        else {
+            Log.d("AAA", "no permission granted")
+        }
+
+        for (item in REQUIRED_PERMISSIONS) {
+            Log.d("AAA", "item -> $item") // item -> android.permission.CAMERA
+        }
+    }
+
+    private fun allPermissionGranted() = REQUIRED_PERMISSIONS.all {
+        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
     override fun onStart() {
@@ -34,5 +46,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d("AAA", "onDestroy executed")
+    }
+
+    companion object {
+        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
     }
 }
