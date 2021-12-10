@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.ImageFormat
 import android.net.Uri
 import android.util.Size
 import android.widget.Toast
@@ -22,6 +23,10 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.mv.engine.FaceDetector
 import com.mv.engine.Live
+import org.opencv.android.OpenCVLoader
+import org.opencv.core.Mat
+import com.google.android.gms.vision.Frame
+import android.content.pm.ApplicationInfo
 
 typealias LumaListener = (luma: Double) -> Unit
 
@@ -29,26 +34,20 @@ class MainActivity : AppCompatActivity() {
 
     init {
         instance = this
+        val isInitialized = OpenCVLoader.initDebug()
     }
 
     private var imageCapture: ImageCapture? = null
     private lateinit var outputDirectory: File
     private lateinit var cameraExecutor: ExecutorService
 
-    private var faceDetector: FaceDetector = FaceDetector()
-    private var live: Live = Live()
+//    private var faceDetector: FaceDetector = FaceDetector()
+//    private var live: Live = Live()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("AAA", "nativeLib: " + getApplicationInfo().nativeLibraryDir)
         setContentView(R.layout.activity_main)
-
-        var assetManager = MainActivity.ApplicationContext().resources.assets
-
-        var retFaceDetector = faceDetector.loadModel(assetManager)
-        Log.d("AAA", "faceDetector load: $retFaceDetector")
-
-        var retLive= live.loadModel(assetManager)
-        Log.d("AAA", "live load: $retLive")
 
         if(allPermissionGranted()) {
             Log.d("AAA", "permission granted")
@@ -213,6 +212,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
+
+        var assetManager = MainActivity.ApplicationContext().resources.assets
+        private var faceDetector: FaceDetector = FaceDetector()
+        private var live: Live = Live()
+        private var ori: Int = 1
+
+        init {
+            //val isInitialized = OpenCVLoader.initDebug()
+
+            var retFaceDetector = faceDetector.loadModel(assetManager)
+            Log.d("AAA", "faceDetector load: $retFaceDetector")
+
+            var retLive= live.loadModel(assetManager)
+            Log.d("AAA", "live load: $retLive")
+        }
         private fun ByteBuffer.toByteArray(): ByteArray {
             rewind()
             val data = ByteArray(remaining())
@@ -225,6 +239,20 @@ class MainActivity : AppCompatActivity() {
             val data = buffer.toByteArray()
             val pixels = data.map { it.toInt() and 0xFF }
             val luma = pixels.average()
+
+            var m = Mat()
+            var mc = Mat()
+
+//            var frame = Frame.Builder().setImageData(buffer, 480, 640, ImageFormat.NV21).build()
+//            var boxes = faceDetector.detect(frame.grayscaleImageData.array(), 480, 640, ori, m.nativeObjAddr, mc.nativeObjAddr)
+//            Log.e(
+//                "AAA", "boxes[0] confidence: " + "(" +
+//                        boxes[0].left + ", " + boxes[0].top + ") (" +
+//                        boxes[0].right + ", " + boxes[0].bottom + ")"
+//            )
+//
+//            var antiProb = live.detect(data, 480, 640, 1, boxes[0])
+//            Log.e("AAA", "anti probability: $antiProb")
 
             listener(luma)
 
