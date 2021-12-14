@@ -218,18 +218,18 @@ class MainActivity : AppCompatActivity() {
     private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
 
         var assetManager = MainActivity.ApplicationContext().resources.assets
-        private var faceDetector: FaceDetector = FaceDetector()
-        private var live: Live = Live()
+//        private var faceDetector: FaceDetector = FaceDetector()
+//        private var live: Live = Live()
         private var ori: Int = 1
 
         init {
             //val isInitialized = OpenCVLoader.initDebug()
 
-            var retFaceDetector = faceDetector.loadModel(assetManager)
-            Log.d("AAA", "faceDetector load: $retFaceDetector")
-
-            var retLive= live.loadModel(assetManager)
-            Log.d("AAA", "live load: $retLive")
+//            var retFaceDetector = faceDetector.loadModel(assetManager)
+//            Log.d("AAA", "faceDetector load: $retFaceDetector")
+//
+//            var retLive= live.loadModel(assetManager)
+//            Log.d("AAA", "live load: $retLive")
         }
         private fun ByteBuffer.toByteArray(): ByteArray {
             rewind()
@@ -238,23 +238,7 @@ class MainActivity : AppCompatActivity() {
             return data
         }
 
-        override fun analyze(image: ImageProxy) {
-            val buffer = image.planes[0].buffer
-            val data = buffer.toByteArray()
-            val pixels = data.map { it.toInt() and 0xFF }
-            val luma = pixels.average()
-
-            var m = Mat()
-            var mc = Mat()
-
-            if(image.image != null) {
-                val image = image.image
-                Log.d("AAA", "image is not null")
-            }
-            else {
-                Log.d("AAA", "image is null")
-            }
-
+        private fun makeFrame1(image: ImageProxy): Frame {
             val yBuffer = image.planes[0].buffer
             val uBuffer = image.planes[1].buffer
             val vBuffer = image.planes[2].buffer
@@ -276,35 +260,68 @@ class MainActivity : AppCompatActivity() {
             val yuvImage = YuvImage(nv21, ImageFormat.NV21, 480, 640, null)
             Log.d("AAA", "YuvImage set")
 
-            val out = ByteArrayOutputStream()
-            Log.d("AAA", "ByteArray out")
-//
-//            yuvImage.compressToJpeg(Rect(0, 0, 480, 640), 100, out)
-//            Log.d("AAA", "compressed to Jpeg")
-
             val frame = Frame.Builder()
                 .setImageData(ByteBuffer.wrap(yuvImage.yuvData), 480, 640, ImageFormat.NV21)
-                .setId(0)
                 .build()
-            val imageBytes = out.toByteArray()
-            Log.d("AAA", "imageByte: out.toByteArray")
+            Log.d("AAA", "frame built on makeFrame1")
 
-            var boxes = faceDetector.detect(
-                frame.grayscaleImageData.array(),
-                480,
-                640,
-                ori,
-                m.nativeObjAddr,
-                mc.nativeObjAddr)
-            Log.e(
-                "AAA", "boxes[0] confidence: " + "(" +
-                        boxes[0].left + ", " + boxes[0].top + ") (" +
-                        boxes[0].right + ", " + boxes[0].bottom + ")"
-            )
+            return frame
+        }
+
+        private fun makeFrame2(image: ImageProxy): Frame {
+            val buffer = image.planes[0].buffer
+            val imageByte = ByteArray(buffer.capacity())
+            Log.d("AAA", "imageByte prepared")
+
+            buffer.rewind();
+            buffer.get(imageByte)
+            Log.d("AAA", "buffer setting")
+
+            val frame = Frame.Builder()
+                .setImageData(buffer, 480, 640, ImageFormat.NV21)
+                .build()
+            Log.d("AAA", "frame built on makeFrame2")
+
+            return frame
+        }
+
+        override fun analyze(image: ImageProxy) {
+            val buffer = image.planes[0].buffer
+            val data = buffer.toByteArray()
+            val pixels = data.map { it.toInt() and 0xFF }
+            val luma = pixels.average()
+
+            var m = Mat()
+            var mc = Mat()
+
+            if(image.image != null) {
+                val image = image.image
+                Log.d("AAA", "image is not null")
+            }
+            else {
+                Log.d("AAA", "image is null")
+            }
+
+//            val frame = makeFrame1(image)
+            val frame = makeFrame2(image)
 
 
-            var antiProb = live.detect(imageBytes, 480, 640, 1, boxes[0])
-            Log.e("AAA", "anti probability: $antiProb")
+//            var boxes = faceDetector.detect(
+//                frame.grayscaleImageData.array(),
+//                480,
+//                640,
+//                ori,
+//                m.nativeObjAddr,
+//                mc.nativeObjAddr)
+//            Log.e(
+//                "AAA", "boxes[0] confidence: " + "(" +
+//                        boxes[0].left + ", " + boxes[0].top + ") (" +
+//                        boxes[0].right + ", " + boxes[0].bottom + ")"
+//            )
+//
+//
+//            var antiProb = live.detect(imageBytes, 480, 640, 1, boxes[0])
+//            Log.e("AAA", "anti probability: $antiProb")
 
             listener(luma)
 
