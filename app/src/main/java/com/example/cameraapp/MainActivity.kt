@@ -27,6 +27,10 @@ import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
 import com.google.android.gms.vision.Frame
 import android.content.pm.ApplicationInfo
+import android.graphics.Rect
+import android.graphics.YuvImage
+import com.google.mlkit.vision.common.InputImage
+import java.io.ByteArrayOutputStream
 
 typealias LumaListener = (luma: Double) -> Unit
 
@@ -243,16 +247,64 @@ class MainActivity : AppCompatActivity() {
             var m = Mat()
             var mc = Mat()
 
-//            var frame = Frame.Builder().setImageData(buffer, 480, 640, ImageFormat.NV21).build()
-//            var boxes = faceDetector.detect(frame.grayscaleImageData.array(), 480, 640, ori, m.nativeObjAddr, mc.nativeObjAddr)
-//            Log.e(
-//                "AAA", "boxes[0] confidence: " + "(" +
-//                        boxes[0].left + ", " + boxes[0].top + ") (" +
-//                        boxes[0].right + ", " + boxes[0].bottom + ")"
-//            )
+            if(image.image != null) {
+                val image = image.image
+                Log.d("AAA", "image is not null")
+            }
+            else {
+                Log.d("AAA", "image is null")
+            }
+
+            val yBuffer = image.planes[0].buffer
+            val uBuffer = image.planes[1].buffer
+            val vBuffer = image.planes[2].buffer
+            Log.d("AAA", "Buffer set")
+
+            val ySize = yBuffer.remaining()
+            val uSize = uBuffer.remaining()
+            val vSize = vBuffer.remaining()
+            Log.d("AAA", "Buffer remain")
+
+            val nv21 = ByteArray(ySize + uSize + vSize)
+            Log.d("AAA", "nv21 set")
+
+            yBuffer.get(nv21, 0, ySize)
+            uBuffer.get(nv21, ySize, vSize)
+            vBuffer.get(nv21, ySize + vSize, uSize)
+            Log.d("AAA", "nv21 filling")
+
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, 480, 640, null)
+            Log.d("AAA", "YuvImage set")
+
+            val out = ByteArrayOutputStream()
+            Log.d("AAA", "ByteArray out")
 //
-//            var antiProb = live.detect(data, 480, 640, 1, boxes[0])
-//            Log.e("AAA", "anti probability: $antiProb")
+//            yuvImage.compressToJpeg(Rect(0, 0, 480, 640), 100, out)
+//            Log.d("AAA", "compressed to Jpeg")
+
+            val frame = Frame.Builder()
+                .setImageData(ByteBuffer.wrap(yuvImage.yuvData), 480, 640, ImageFormat.NV21)
+                .setId(0)
+                .build()
+            val imageBytes = out.toByteArray()
+            Log.d("AAA", "imageByte: out.toByteArray")
+
+            var boxes = faceDetector.detect(
+                frame.grayscaleImageData.array(),
+                480,
+                640,
+                ori,
+                m.nativeObjAddr,
+                mc.nativeObjAddr)
+            Log.e(
+                "AAA", "boxes[0] confidence: " + "(" +
+                        boxes[0].left + ", " + boxes[0].top + ") (" +
+                        boxes[0].right + ", " + boxes[0].bottom + ")"
+            )
+
+
+            var antiProb = live.detect(imageBytes, 480, 640, 1, boxes[0])
+            Log.e("AAA", "anti probability: $antiProb")
 
             listener(luma)
 
