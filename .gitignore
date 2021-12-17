@@ -17,3 +17,4 @@ local.properties
 /facerolicence
 /.idea
 /.sdk
+/app/src/main/jniLibs/
