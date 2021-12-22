@@ -6,11 +6,12 @@ import android.os.Bundle
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.ImageFormat
-import android.graphics.Rect
+import android.graphics.*
 import android.net.Uri
+import android.os.Build
 import android.util.Size
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
@@ -26,12 +27,19 @@ import com.mv.engine.FaceDetector
 import com.mv.engine.Live
 import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
-import com.google.android.gms.vision.Frame
-import android.graphics.YuvImage
-import java.io.ByteArrayOutputStream
 
-typealias LumaListener = (luma: Double) -> Unit
-typealias FaceroListner = (nBoxes: Int) -> Unit
+//class FaceBoxResult {
+//    var bBoxes: List<FaceBox> = emptyList()
+//
+//    constructor(bBoxes: List<FaceBox>) {
+//        for(box in bBoxes) {
+//            this.bBoxes += box
+//        }
+//        Log.d("AAA", "number of Boxes -> ${this.bBoxes.size}")
+//    }
+//}
+
+typealias FaceroListner = (faceroResult: FaceBoxResult) -> Unit
 
 class MainActivity : AppCompatActivity() {
 
@@ -43,10 +51,12 @@ class MainActivity : AppCompatActivity() {
     private var imageCapture: ImageCapture? = null
     private lateinit var outputDirectory: File
     private lateinit var cameraExecutor: ExecutorService
+    private lateinit var overlay: Bitmap
 
-//    private var faceDetector: FaceDetector = FaceDetector()
-//    private var live: Live = Live()
+    private var faceDetector: FaceDetector = FaceDetector()
+    private var live: Live = Live()
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("AAA", "nativeLib: " + getApplicationInfo().nativeLibraryDir)
@@ -70,11 +80,9 @@ class MainActivity : AppCompatActivity() {
             takePhoto()
         }
 
-        // outputDirectory = File("/mnt/sdcard/facero")
         outputDirectory = getOutputDirectory()
-        Log.d("AAA", outputDirectory.toString())
-
         cameraExecutor = Executors.newSingleThreadExecutor()
+
     }
 
     override fun onRequestPermissionsResult(
@@ -137,6 +145,45 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun scale(x: Float):Float {
+        val getWidth = 1080F
+        val imageWidth = 480F
+        val ScaleFactor:Float = getWidth / imageWidth
+        Log.d("CCC1", "imagePixel = $x")
+        Log.d("CCC1", "ScaleFactor = $ScaleFactor")
+        return x * ScaleFactor
+    }
+
+    private fun translateX(x: Float): Float {
+        // FIXME: isImageFiliped=true if using front-camera
+        val isImageFliped:Boolean = false
+
+        val imageAspectRatio = 1080F / 1920F
+        val getHeight: Float = 1573F        // FIXME
+        val getWidth: Float = 1080F         // FIXME
+        val postScaleWidthOffset:Float = (getHeight as Float * imageAspectRatio - getWidth) / 2
+        var translatedX: Float = scale(x) - postScaleWidthOffset
+
+        Log.d("AAA1", "x = $x")
+        Log.d("AAA1", "scale(x) = " + scale(x))
+        Log.d("AAA1", "postScaleWidthOffset = $postScaleWidthOffset")
+
+        if(isImageFliped) {
+            translatedX = getWidth - translatedX
+        }
+        return translatedX
+    }
+
+    private fun translateY(y: Float): Float {
+        val imageAspectRatio = 1080F / 1920F
+        val getHeight:Float = 1573F         // FIXME
+        val getWidth:Float = 1080F          // FIXME
+        val postScaleHeightOffset = (getWidth / imageAspectRatio - getHeight) / 2
+        val translatedY: Float = scale(y) - postScaleHeightOffset
+        return translatedY
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun startCamera() {
         Log.d("AAA", "startCamera called")
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
@@ -154,16 +201,107 @@ class MainActivity : AppCompatActivity() {
                 .setTargetResolution(Size(1080, 1920))
                 .build()
 
+            // paint setting value
+            val textStroke = 8F
+            val rectStroke = 7F
+            val textBold = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            val successColor = Color.parseColor("#64E312")
+            val failureColor = Color.parseColor("#E91111")
+
+            // define Text paint
+            val successTextPaint = Paint().apply {
+                isAntiAlias = true
+                textSize = 20F
+                typeface = textBold
+                color = successColor
+                strokeWidth = textStroke
+            }
+
+            val failureTextPaint = Paint().apply {
+                isAntiAlias = true
+                textSize = 20F
+                typeface = textBold
+                color = failureColor
+                strokeWidth = textStroke
+            }
+
+            // define Rect paint
+            val successRectPaint = Paint().apply {
+                isAntiAlias = true
+                style = Paint.Style.STROKE
+                color = successColor
+                strokeWidth = rectStroke
+            }
+
+            val failureRectPaint = Paint().apply {
+                isAntiAlias = true
+                style = Paint.Style.STROKE
+                color = failureColor
+                strokeWidth = rectStroke
+            }
+
+            var rectPaint: Paint
+            var textPaint: Paint
+
             val imageAnalyzer = ImageAnalysis.Builder()
                 .build()
                 .also {
-                    it.setAnalyzer(cameraExecutor, LuminosityAnalyzer { nBoxes ->
-                        Log.d("AAA", "Number of Bboxes found: $nBoxes")
+                    it.setAnalyzer(cameraExecutor, FaceDetectorAnalyzer { faceroResult ->
+                        val bitmap = textureView.bitmap ?:return@FaceDetectorAnalyzer
+                        overlay = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+
+                        for(rect in faceroResult.bBoxes) {
+                            var canvas = Canvas(overlay)
+
+                            // prepare some FaceBox info
+                            val left = rect.left.toFloat()
+                            val top = rect.top.toFloat()
+                            val right = rect.right.toFloat()
+                            val bottom = rect.bottom.toFloat()
+                            val anti = rect.antiConf
+                            val confidence = rect.confidence
+                            val boxString = "Face=$confidence Anti=$anti"
+                            val textLeft = left
+                            val textTop = (top)
+                            val width = right - left
+                            val height = bottom - top
+                            Log.d("AAA", "confidence=$confidence anti=$anti")
+
+                            val translatedX = translateX(left)
+                            val translatedY = translateY(top)
+
+                            Log.d("AAA",
+                                "(" + left + "," + top + ")"
+                                + " -> " +
+                                "(" + translatedX + "," + translatedY + ")"
+                            )
+                            // check if face is valid
+                            // "anti > 0.85F" means it is a real face
+                            if(confidence > 0.80 && anti > 0.85F) {
+                                rectPaint = successRectPaint
+                                textPaint = successTextPaint
+                            }
+                            else {
+                                rectPaint = failureRectPaint
+                                textPaint = failureTextPaint
+                            }
+
+                            canvas.drawRect(left, top, left + 10F, top + 10F, rectPaint)
+                            canvas.drawRect(translatedX, translatedY, translatedX + width, translatedY + height, rectPaint)
+                            canvas.drawText(boxString, textLeft, textTop, textPaint)
+
+                            overlay?.let { Canvas(it) }?.apply {
+                                canvas
+                            }
+                        }
+
+                        runOnUiThread {
+                            imageView.setImageBitmap(overlay)
+                        }
                     })
                 }
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-//            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
             try {
                 cameraProvider.unbindAll()
@@ -177,29 +315,13 @@ class MainActivity : AppCompatActivity() {
             }
         }, ContextCompat.getMainExecutor(this))
     }
+
     private fun allPermissionGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
-    override fun onStart() {
-        super.onStart()
-        Log.d("AAA", "onStart executed")
-    }
-
-    override fun onResume() {
-        super.onResume()
-        Log.d("AAA", "onResume executed")
-    }
-
-    override fun onPause() {
-        super.onPause()
-        Log.d("AAA", "onPause executed")
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        Log.d("AAA", "onDestroy executed")
-
         cameraExecutor.shutdown()
         Log.d("AAA", "cameraExecutor shutdown")
     }
@@ -211,167 +333,6 @@ class MainActivity : AppCompatActivity() {
         lateinit var instance: MainActivity
         fun ApplicationContext(): Context {
             return instance.applicationContext
-        }
-    }
-
-    private class LuminosityAnalyzer(private val listener: FaceroListner) : ImageAnalysis.Analyzer {
-
-        var assetManager = MainActivity.ApplicationContext().resources.assets
-        private var faceDetector: FaceDetector = FaceDetector()
-        private var live: Live = Live()
-        // private var ori: Int = 8    // big-gk
-        private var ori: Int = 6    // gk
-
-        init {
-            //val isInitialized = OpenCVLoader.initDebug()
-
-            var retFaceDetector = faceDetector.loadModel(assetManager)
-            Log.d("AAA", "faceDetector load: $retFaceDetector")
-
-            var retLive = live.loadModel(assetManager)
-            Log.d("AAA", "live load: $retLive")
-        }
-        private fun ByteBuffer.toByteArray(): ByteArray {
-            rewind()
-            val data = ByteArray(remaining())
-            get(data)
-            return data
-        }
-
-        private fun makeByteArray(image: ImageProxy): ByteArray {
-            val yBuffer = image.planes[0].buffer
-            val vBuffer = image.planes[2].buffer
-
-            yBuffer.rewind()
-            //vBuffer.rewind()
-
-            var ySize = 0
-            var uSize = 0
-            var vSize = 0
-
-            ySize = yBuffer.remaining()
-            vSize = vBuffer.remaining()
-
-            val totalSize = ySize + uSize + vSize
-            val nv21 = ByteArray(totalSize)
-            Log.d("AAA", "ByteArray size = " + nv21.size)
-
-            yBuffer.get(nv21, 0, ySize)
-            vBuffer.get(nv21, ySize, vSize)
-
-            return nv21
-        }
-
-        private fun makeNV21(image: ImageProxy): ByteArray {
-            val planes = image.planes
-            val crop = image.cropRect
-
-            val format = image.format
-            val width = crop.width()
-            val height = crop.height()
-            var channelOffset = 0
-            var outputStride = 1
-
-            val mData = ByteArray(width * height * ImageFormat.getBitsPerPixel(format) / 8)
-            val mRowData = ByteArray(planes[0].rowStride)
-
-            var buffer:ByteBuffer? = null
-            for(i in 0 until planes.size) {
-                when(i) {
-                    0 -> {
-                        channelOffset = 0
-                        outputStride = 1
-                    }
-                    1 -> {
-                        channelOffset = width * height + 1
-                        outputStride = 2
-                    }
-                    2 -> {
-                        channelOffset = width * height
-                        outputStride = 2
-                    }
-                }
-
-                buffer = planes[i].buffer
-                val rowStride = planes[i].rowStride
-                val pixelStide = planes[i].pixelStride
-
-                val shift = if(i == 0) 0 else 1
-                val w = width shr shift
-                val h = height shr shift
-                buffer.position(rowStride * (crop.top shr shift) + pixelStide * (crop.left shr shift))
-                for(row in 0 until h) {
-                    var length: Int
-                    if(pixelStide == 1 && outputStride == 1) {
-                        length = w
-                        buffer.get(mData, channelOffset, length)
-                        channelOffset += length
-                    }
-                    else {
-                        length = (w - 1) * pixelStide + 1
-                        buffer.get(mRowData, 0, length)
-                        for(col in 0 until w) {
-                            mData[channelOffset] = mRowData[col * pixelStide]
-                            channelOffset += outputStride
-                        }
-                    }
-                    if(row < h - 1) {
-                        buffer.position(buffer.position() + rowStride - length)
-                    }
-                }
-            }
-
-            buffer?.clear()
-
-            return mData
-        }
-
-        override fun analyze(image: ImageProxy) {
-            val buffer = image.planes[0].buffer
-            val data = buffer.toByteArray()
-            val pixels = data.map { it.toInt() and 0xFF }
-            val luma = pixels.average()
-
-            var m = Mat()
-            var mc = Mat()
-
-            val byteArray = makeNV21((image))
-
-            val width = image.width
-            val height = image.height
-
-            // 640, 480 works
-            var boxes = faceDetector.detect(
-                byteArray,
-                width,
-                height,
-                ori,
-                m.nativeObjAddr,
-                mc.nativeObjAddr)
-
-            val nBoxes = boxes.size
-
-            if(boxes.isNotEmpty()) {
-                Log.e(
-                    "AAA", "boxes[0] confidence: " + "(" +
-                            boxes[0].left + ", " + boxes[0].top + ") (" +
-                            boxes[0].right + ", " + boxes[0].bottom + ")"
-                )
-
-                var antiProb = live.detect(
-                    byteArray,
-                    width,
-                    height,
-                    ori,
-                    boxes[0]
-                )
-                Log.d("AAA", "anti prob = $antiProb")
-            }
-
-            listener(nBoxes)
-            //listener(luma)
-
-            image.close()
         }
     }
 }
